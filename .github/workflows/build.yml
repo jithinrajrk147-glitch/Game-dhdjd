@@ -36,7 +36,8 @@ jobs:
               "@capacitor/android": "^6.1.2"
             },
             "devDependencies": {
-              "@capacitor/cli": "^6.1.2"
+              "@capacitor/cli": "^6.1.2",
+              "typescript": "^5.4.5"
             }
           }
           EOF
