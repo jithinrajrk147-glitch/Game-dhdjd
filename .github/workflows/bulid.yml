@@ -1,19 +1,21 @@
 name: Build APK
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -23,11 +25,35 @@ jobs:
 
       - name: Create package.json
         run: |
-          echo '{"name":"huntergame","version":"1.0.0","dependencies":{"@capacitor/core":"^6.0.0","@capacitor/android":"^6.0.0"},"devDependencies":{"@capacitor/cli":"^6.0.0"}}' > package.json
+          echo '{' >> package.json
+          echo '  "name": "huntergame",' >> package.json
+          echo '  "version": "1.0.0",' >> package.json
+          echo '  "dependencies": {' >> package.json
+          echo '    "@capacitor/core": "^6.0.0",' >> package.json
+          echo '    "@capacitor/android": "^6.0.0"' >> package.json
+          echo '  },' >> package.json
+          echo '  "devDependencies": {' >> package.json
+          echo '    "@capacitor/cli": "^6.0.0"' >> package.json
+          echo '  }' >> package.json
+          echo '}' >> package.json
 
       - name: Create capacitor.config.ts
         run: |
-          echo "import { CapacitorConfig } from '@capacitor/cli'; const config: CapacitorConfig = { appId: 'com.hunter.game', appName: 'HunterGame', webDir: 'www', plugins: { WebSocketServer: { port: 8080 } }, android: { allowMixedContent: true } }; export default config;" > capacitor.config.ts
+          echo 'import { CapacitorConfig } from "@capacitor/cli";' > capacitor.config.ts
+          echo 'const config: CapacitorConfig = {' >> capacitor.config.ts
+          echo '  appId: "com.hunter.game",' >> capacitor.config.ts
+          echo '  appName: "HunterGame",' >> capacitor.config.ts
+          echo '  webDir: "www",' >> capacitor.config.ts
+          echo '  plugins: {' >> capacitor.config.ts
+          echo '    WebSocketServer: {' >> capacitor.config.ts
+          echo '      port: 8080' >> capacitor.config.ts
+          echo '    }' >> capacitor.config.ts
+          echo '  },' >> capacitor.config.ts
+          echo '  android: {' >> capacitor.config.ts
+          echo '    allowMixedContent: true' >> capacitor.config.ts
+          echo '  }' >> capacitor.config.ts
+          echo '};' >> capacitor.config.ts
+          echo 'export default config;' >> capacitor.config.ts
 
       - name: Install dependencies
         run: npm install
