@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Hunter Minimal</title>
+<style>
+* { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+body { margin:0; overflow:hidden; background:#000; position:fixed; width:100%; height:100%; }
+canvas { display:block; image-rendering:pixelated; }
+#hud { position:absolute; top:10px; left:10px; padding:8px; background:#000a; border-radius:8px; color:#fff; font-family:Arial; font-size:12px; }
+.bar { width:150px; height:12px; background:#21262d; border:1px solid #30363d; border-radius:4px; overflow:hidden; margin-top:2px; }
+.bar-fill { height:100%; }
+#hpBar { background:#da3633; }
+#ammoBar { background:#f0883e; }
+#joy { position:absolute; bottom:80px; left:80px; width:120px; height:120px; background:#fff3; border-radius:50%; border:2px solid #fff; }
+#stick { width:50px; height:50px; background:#58a6ff; border-radius:50%; position:absolute; top:35px; left:35px; }
+#fire { position:absolute; bottom:80px; right:80px; width:80px; height:80px; background:#f44; border-radius:50%; border:3px solid #fff; color:#fff; font-weight:bold; font-size:16px; }
+#lobby { position:absolute; top:0;left:0;width:100%;height:100%; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999; color:#fff; font-family:Arial; }
+#lobby button { padding:14px 28px; margin:8px; background:#da3633; color:#fff; border:none; border-radius:6px; font-size:16px; font-weight:bold; }
+#lobby input { padding:12px; margin:8px; border-radius:6px; border:2px solid #30363d; background:#21262d; color:#fff; text-align:center; font-size:16px; width:200px; }
+#playerList { margin-top:15px; font-size:14px; }
+#hostIdText { margin:10px; color:#58a6ff; font-weight:bold; font-size:12px; word-break:break-all; padding:0 20px; max-width:300px; text-align:center; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+    <div>HP</div><div class="bar"><div id="hpBar" class="bar-fill" style="width:100%"></div></div>
+    <div style="margin-top:4px;">AMMO</div><div class="bar"><div id="ammoBar" class="bar-fill" style="width:100%"></div></div>
+    <div style="margin-top:4px;">PLAYERS: <span id="playerCount">1</span></div>
+</div>
+<div id="joy"><div id="stick"></div></div>
+<button id="fire">FIRE</button>
+<div id="lobby">
+    <h2>HUNTER MULTIPLAYER</h2>
+    <div>100% Offline Hotspot</div>
+    <div style="font-size:12px;margin:10px;color:#0f0;">ZERO INTERNET NEEDED</div>
+    <button id="hostBtn">HOST GAME</button>
+    <div>OR</div>
+    <input id="joinId" placeholder="Host IP" value="192.168.43.1" autocomplete="off">
+    <button id="joinBtn">JOIN GAME</button>
+    <div id="hostIdText"></div>
+    <div id="playerList"></div>
+</div>
+<script>
+let canvas = document.getElementById('c');
+let ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
+resize();
+addEventListener('resize',resize);
+let landImg = new Image(); landImg.src = 'land.png';
+let charImg = new Image(); charImg.src = 'character.png';
+let treeImg = new Image(); treeImg.src = 'tree.png';
+let stoneImg = new Image(); stoneImg.src = 'stone.png';
+let lakeImg = new Image(); lakeImg.src = 'lake.png';
+let homeImg = new Image(); homeImg.src = 'home.png';
+let px=3200,py=3200,pa=0,php=100,pvx=0,pvy=0;
+let pammo=30,pshootCD=0,panim=0,pmoving=false;
+let camx=0,camy=0;
+const ZOOM=2;
+let bullets=[];
+let keys={};
+let mouseX=0,mouseY=0;
+let touchX=0,touchY=0,touchActive=false;
+const TILE=64;
+const WORLD_SIZE=100;
+let MAP=[];
+for(let y=0;y<WORLD_SIZE;y++){
+    MAP[y]=[];
+    for(let x=0;x<WORLD_SIZE;x++){
+        MAP[y][x]=0;
+    }
+}
+for(let i=0;i<15;i++){
+    let x=Math.floor(Math.random()*WORLD_SIZE);
+    let y=Math.floor(Math.random()*WORLD_SIZE);
+    if(MAP[y][x]===0)MAP[y][x]=4;
+}
+for(let i=0;i<80;i++){
+    let x=Math.floor(Math.random()*WORLD_SIZE);
+    let y=Math.floor(Math.random()*WORLD_SIZE);
+    MAP[y][x]=1;
+}
+for(let i=0;i<60;i++){
+    let x=Math.floor(Math.random()*WORLD_SIZE);
+    let y=Math.floor(Math.random()*WORLD_SIZE);
+    if(MAP[y][x]===0)MAP[y][x]=2;
+}
+for(let i=0;i<20;i++){
+    let cx=Math.floor(Math.random()*WORLD_SIZE);
+    let cy=Math.floor(Math.random()*WORLD_SIZE);
+    for(let y=cy-2;y<cy+2;y++){
+        for(let x=cx-2;x<cx+2;x++){
+            if(x>=0&&x<WORLD_SIZE&&y>=0&&y<WORLD_SIZE&&Math.hypot(x-cx,y-cy)<2){
+                if(MAP[y][x]===0)MAP[y][x]=3;
+            }
+        }
+    }
+}
+document.onkeydown=e=>keys[e.key.toLowerCase()]=true;
+document.onkeyup=e=>keys[e.key.toLowerCase()]=false;
+canvas.onmousemove=e=>{
+    let r=canvas.getBoundingClientRect();
+    mouseX=(e.clientX-r.left)/ZOOM+camx;
+    mouseY=(e.clientY-r.top)/ZOOM+camy;
+};
+canvas.onmousedown=shoot;
+let joy=document.getElementById('joy');
+let stick=document.getElementById('stick');
+joy.ontouchstart=e=>{e.preventDefault();touchActive=true;};
+joy.ontouchmove=e=>{
+    e.preventDefault();
+    let t=e.touches[0],r=joy.getBoundingClientRect();
+    let x=t.clientX-r.left-60,y=t.clientY-r.top-60;
+    let d=Math.hypot(x,y);
+    if(d>40){x=x/d*40;y=y/d*40;}
+    stick.style.left=35+x+'px';stick.style.top=35+y+'px';
+    touchX=x/40;touchY=y/40;
+};
+joy.ontouchend=e=>{
+    e.preventDefault();
+    touchActive=false;touchX=0;touchY=0;
+    stick.style.left='35px';stick.style.top='35px';
+};
+document.getElementById('fire').ontouchstart=e=>{e.preventDefault();shoot();};
+function shoot(){
+    if(pshootCD>0||pammo<=0)return;
+    pshootCD=8;pammo--;
+    let bullet = {x:px,y:py,vx:Math.cos(pa)*18,vy:Math.sin(pa)*18,life:80};
+    bullets.push(bullet);
+    if(gameStarted) sendNet({t:'b',x:px,y:py,a:pa});
+}
+function getTile(x,y){
+    let tx=Math.floor(x/TILE);
+    let ty=Math.floor(y/TILE);
+    if(tx<0||tx>=WORLD_SIZE||ty<0||ty>=WORLD_SIZE)return 1;
+    return MAP[ty][tx];
+}
+function isSolid(x,y){
+    let t=getTile(x,y);
+    return t===1||t===2||t===4;
+}
+function getSpeed(x,y){
+    let t=getTile(x,y);
+    if(t===3)return 0.5;
+    return 1;
+}
+function update(){
+    let dx=0,dy=0;
+    if(keys['w']||keys['arrowup'])dy-=1;
+    if(keys['s']||keys['arrowdown'])dy+=1;
+    if(keys['a']||keys['arrowleft'])dx-=1;
+    if(keys['d']||keys['arrowright'])dx+=1;
+    if(touchActive){dx=touchX;dy=touchY;}
+    let speed=4*getSpeed(px,py);
+    if(dx||dy){
+        let len=Math.hypot(dx,dy);
+        pvx=dx/len*speed;pvy=dy/len*speed;
+        pmoving=true;panim+=0.3;
+    }else{
+        pvx*=0.8;pvy*=0.8;pmoving=false;
+    }
+    pa=Math.atan2(mouseY-py,mouseX-px);
+    if(keys['r'])pammo=30;
+    if(pshootCD>0)pshootCD--;
+    let nx=px+pvx,ny=py+pvy;
+    if(!isSolid(nx,py))px=nx;else pvx=0;
+    if(!isSolid(px,ny))py=ny;else pvy=0;
+    bullets=bullets.filter(b=>{
+        b.x+=b.vx;b.y+=b.vy;b.life--;
+        if(isSolid(b.x,b.y))return false;
+        return b.life>0;
+    });
+    camx=px-(canvas.width/ZOOM)/2;
+    camy=py-(canvas.height/ZOOM)/2;
+    camx=Math.max(0,Math.min(6400-canvas.width/ZOOM,camx));
+    camy=Math.max(0,Math.min(6400-canvas.height/ZOOM,camy));
+}
+function draw(){
+    ctx.save();
+    ctx.scale(ZOOM,ZOOM);
+    ctx.fillStyle='#2a5a2a';
+    ctx.fillRect(0,0,canvas.width/ZOOM,canvas.height/ZOOM);
+    if(landImg.complete&&landImg.naturalWidth>0){
+        let sx=Math.floor(camx/TILE)*TILE;
+        let sy=Math.floor(camy/TILE)*TILE;
+        let ex=Math.ceil((camx+canvas.width/ZOOM)/TILE)*TILE;
+        let ey=Math.ceil((camy+canvas.height/ZOOM)/TILE)*TILE;
+        for(let y=sy;y<ey;y+=TILE){
+            for(let x=sx;x<ex;x+=TILE){
+                ctx.drawImage(landImg,x-camx,y-camy,TILE,TILE);
+            }
+        }
+    }
+    let sx=Math.floor(camx/TILE);
+    let sy=Math.floor(camy/TILE);
+    let ex=Math.ceil((camx+canvas.width/ZOOM)/TILE);
+    let ey=Math.ceil((camy+canvas.height/ZOOM)/TILE);
+    for(let y=sy;y<ey;y++){
+    for(let x=sx;x<ex;x++){
+        if(y<0||y>=WORLD_SIZE||x<0||x>=WORLD_SIZE)continue;
+        let tile=MAP[y][x];
+        let drawX=x*TILE-camx;
+        let drawY=y*TILE-camy;
+        if(tile===1){
+            if(stoneImg.complete&&stoneImg.naturalWidth>0){
+                ctx.drawImage(stoneImg,drawX,drawY,TILE,TILE);
+            }else{
+                ctx.fillStyle='#666';
+                ctx.fillRect(drawX,drawY,TILE,TILE);
+            }
+        }else if(tile===2){
+            if(treeImg.complete&&treeImg.naturalWidth>0){
+                ctx.drawImage(treeImg,drawX,drawY,TILE,TILE);
+            }else{
+                ctx.fillStyle='#0a3a0a';
+                ctx.fillRect(drawX,drawY,TILE,TILE);
+            }
+        }else if(tile===3){
+            if(lakeImg.complete&&lakeImg.naturalWidth>0){
+                ctx.drawImage(lakeImg,drawX,drawY,TILE,TILE);
+            }else{
+                ctx.fillStyle='#1e4d8b';
+                ctx.fillRect(drawX,drawY,TILE,TILE);
+            }
+        }else if(tile===4){
+            if(homeImg.complete&&homeImg.naturalWidth>0){
+                ctx.drawImage(homeImg,drawX,drawY,TILE,TILE);
+            }else{
+                ctx.fillStyle='#8b4513';
+                ctx.fillRect(drawX,drawY,TILE,TILE);
+                ctx.fillStyle='#da3633';
+                ctx.beginPath();
+                ctx.moveTo(drawX,drawY+20);
+                ctx.lineTo(drawX+32,drawY);
+                ctx.lineTo(drawX+64,drawY+20);
+                ctx.fill();
+                ctx.strokeStyle='#000';
+                ctx.lineWidth=2;
+                ctx.strokeRect(drawX,drawY,TILE,TILE);
+            }
+        }
+    }
+}
+    ctx.fillStyle='#ffa657';
+    bullets.forEach(b=>{
+        ctx.beginPath();
+        ctx.arc(b.x-camx,b.y-camy,4,0,7);
+        ctx.fill();
+    });
+    ctx.save();
+    ctx.translate(px-camx,py-camy);
+    ctx.rotate(pa);
+    let shakeX=pmoving?Math.sin(panim*2)*3:0;
+    let shakeY=pmoving?Math.cos(panim*3)*2:0;
+    ctx.translate(shakeX,shakeY);
+    if(charImg.complete&&charImg.naturalWidth>0){
+        ctx.drawImage(charImg,-32,-32,64,64);
+    }else{
+        ctx.fillStyle='#4a7c59';
+        ctx.fillRect(-20,-20,40,40);
+        ctx.fillStyle='#e0c0a0';
+        ctx.fillRect(-10,-10,20,20);
+    }
+    ctx.restore();
+    drawPlayers();
+    drawNetBullets();
+    ctx.restore();
+    document.getElementById('hpBar').style.width=php+'%';
+    document.getElementById('ammoBar').style.width=(pammo/30*100)+'%';
+}
+function loop(){
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+let ws, isHost = false;
+let players = {};
+let netBullets = [];
+let myId = Math.random().toString(36).substr(2,8);
+let gameStarted = false;
+let lastSent = {x:0, y:0, pa:0};
+async function startHost(){
+    isHost = true;
+    document.getElementById('hostIdText').innerHTML = 'Starting server...';
+    try {
+        await window.Capacitor.Plugins.WebSocketServer.start({port: 8080});
+        document.getElementById('hostIdText').innerHTML = `Host IP: 192.168.43.1:8080`;
+        document.getElementById('playerList').innerHTML = `Players: 1`;
+        document.getElementById('hostBtn').style.display = 'none';
+        document.getElementById('joinBtn').style.display = 'none';
+        document.getElementById('joinId').style.display = 'none';
+        window.Capacitor.Plugins.WebSocketServer.addListener('message', data => {
+            let msg = JSON.parse(data.message);
+            if(msg.t === 'p') players[msg.id] = msg;
+            if(msg.t === 'b') netBullets.push({x:msg.x,y:msg.y,vx:Math.cos(msg.a)*18,vy:Math.sin(msg.a)*18,life:80});
+            if(msg.t === 'join') updatePlayerList();
+            window.Capacitor.Plugins.WebSocketServer.send({message: data.message});
+        });
+    } catch(e) {
+        document.getElementById('hostIdText').innerHTML = 'Error: Plugin missing';
+    }
+}
+function joinGame(){
+    let hostIP = document.getElementById('joinId').value.trim() || '192.168.43.1';
+    document.getElementById('hostIdText').innerHTML = 'Connecting...';
+    ws = new WebSocket(`ws://${hostIP}:8080`);
+    ws.onopen = () => {
+        startGame();
+        ws.send(JSON.stringify({t:'join',id:myId}));
+    };
+    ws.onmessage = (e) => {
+        let msg = JSON.parse(e.data);
+        if(msg.t === 'p') players[msg.id] = msg;
+        if(msg.t === 'b') netBullets.push({x:msg.x,y:msg.y,vx:Math.cos(msg.a)*18,vy:Math.sin(msg.a)*18,life:80});
+        updatePlayerList();
+    };
+    ws.onerror = () => {
+        document.getElementById('hostIdText').innerHTML = 'Failed. Check hotspot';
+    };
+}
+function sendNet(data){
+    data.id = myId;
+    let msg = JSON.stringify(data);
+    if(isHost){
+        window.Capacitor.Plugins.WebSocketServer.send({message: msg});
+    }else if(ws && ws.readyState === 1){
+        ws.send(msg);
+    }
+}
+function sendPos(){
+    if(!gameStarted) return;
+    if(Math.abs(px-lastSent.x) < 3 && Math.abs(py-lastSent.y) < 3 && Math.abs(pa-lastSent.pa) < 0.2) return;
+    sendNet({t:'p', x:Math.round(px), y:Math.round(py), a:Math.round(pa*10)/10});
+    lastSent = {x:px, y:py, pa:pa};
+}
+function drawPlayers(){
+    for(let id in players){
+        if(id === myId) continue;
+        let p = players[id];
+        ctx.save();
+        ctx.translate(p.x-camx, p.y-camy);
+        ctx.rotate(p.a);
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillRect(-20,-20,40,40);
+        ctx.fillStyle = '#e0c0a0';
+        ctx.fillRect(-10,-10,20,20);
+        ctx.restore();
+    }
+}
+function drawNetBullets(){
+    ctx.fillStyle='#ffa657';
+    netBullets=netBullets.filter(b=>{
+        b.x+=b.vx;b.y+=b.vy;b.life--;
+        ctx.beginPath();
+        ctx.arc(b.x-camx,b.y-camy,4,0,7);
+        ctx.fill();
+        if(isSolid(b.x,b.y))return false;
+        return b.life>0;
+    });
+}
+function updatePlayerList(){
+    let count = Object.keys(players).length + 1;
+    document.getElementById('playerList').innerHTML = `Players: ${count}`;
+    document.getElementById('playerCount').textContent = count;
+    if(count >= 2 && isHost) startGame();
+}
+function startGame(){
+    if(gameStarted) return;
+    gameStarted = true;
+    document.getElementById('lobby').style.display = 'none';
+    setInterval(sendPos, 50);
+}
+document.getElementById('hostBtn').onclick = startHost;
+document.getElementById('joinBtn').onclick = joinGame;
+let oldUpdate = update;
+update = function(){
+    oldUpdate();
+    if(gameStarted) sendPos();
+}
+loop();
+</script>
+</body>
+</html>
